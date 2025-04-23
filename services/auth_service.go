@@ -65,7 +65,7 @@ func LoginUser(email, password string) (string, string, error) {
 	}
 
 	// Generate new access token
-	accessToken, err := utils.GenerateAccessToken(user.ID)
+	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email)
 	if err != nil {
 		return "", "", err
 	}
@@ -109,8 +109,14 @@ func RefreshToken(userID uuid.UUID, providedRefreshToken string) (string, error)
 		return "", errors.New("invalid or expired refresh token")
 	}
 
-	// Generate new access token
-	newAccessToken, err := utils.GenerateAccessToken(userID)
+	// Fetch user to get email
+	user, err := repository.GetUserByID(userID)
+	if err != nil || user == nil {
+		return "", errors.New("user not found")
+	}
+
+	// Generate new access token WITH email
+	newAccessToken, err := utils.GenerateAccessToken(userID, user.Email)
 	if err != nil {
 		return "", errors.New("failed to generate new access token")
 	}

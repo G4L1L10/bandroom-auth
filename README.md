@@ -6,7 +6,7 @@ go run cmd/main.go
 
 ## Register a New User
 
-curl -X POST http://localhost:8080/auth/register \
+curl -X POST http://localhost:8081/auth/register \
  -H "Content-Type: application/json" \
  -d '{
 "email": "user1@email.com",
@@ -22,10 +22,10 @@ curl -X POST http://localhost:8080/auth/register \
 
 ## Login & Get Tokens (Access + Refresh)
 
-curl -X POST http://localhost:8080/auth/login \
+curl -X POST http://localhost:8081/auth/login \
  -H "Content-Type: application/json" \
  -d '{
-"email": "user2@email.com",
+"email": "user1@email.com",
 "password": "P4ssword!"
 }' \
  -c cookies.txt | jq
@@ -40,7 +40,7 @@ curl -X POST http://localhost:8080/auth/login \
 
 ## Validate an Access Token
 
-curl -X GET http://localhost:8080/auth/validate \
+curl -X GET http://localhost:8081/auth/validate \
  -H "Authorization: Bearer YOUR_ACCESS_TOKEN_HERE" | jq
 
 ### Expected Response
@@ -52,7 +52,7 @@ curl -X GET http://localhost:8080/auth/validate \
 
 ## Refresh Access Token
 
-curl -X POST http://localhost:8080/auth/refresh \
+curl -X POST http://localhost:8081/auth/refresh \
  -b cookies.txt | jq
 
 ### Expected Response
