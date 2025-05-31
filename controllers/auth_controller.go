@@ -125,12 +125,9 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// ✅ Store Refresh Token in HttpOnly Cookie
-	isSecure := c.Request.TLS != nil // ✅ Detects if HTTPS is used
-	//	c.SetCookie("refresh_token", refreshToken, 7*24*60*60, "/", c.Request.Host, isSecure, true)
-	c.SetCookie("refresh_token", refreshToken, 7*24*60*60, "/", "localhost", isSecure, true)
+	// ✅ Set Refresh Token in HttpOnly cookie for Android Emulator (10.0.2.2)
+	c.SetCookie("refresh_token", refreshToken, 7*24*60*60, "/", "10.0.2.2", false, true)
 
-	// ✅ Return only the access token (refresh token is in cookies)
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Login successful",
 		"access_token": accessToken,
@@ -218,9 +215,8 @@ func Logout(c *gin.Context) {
 		return
 	}
 
-	// ✅ Remove refresh token from cookies
-	//	c.SetCookie("refresh_token", "", -1, "/", c.Request.Host, false, true)
-	c.SetCookie("refresh_token", "", -1, "/", "localhost", false, true)
+	// ✅ Remove cookie for Android Emulator
+	c.SetCookie("refresh_token", "", -1, "/", "10.0.2.2", false, true)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
 }
