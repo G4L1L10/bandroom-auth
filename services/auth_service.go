@@ -65,7 +65,7 @@ func LoginUser(email, password string) (string, string, error) {
 	}
 
 	// Generate new access token
-	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email)
+	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		return "", "", err
 	}
@@ -116,7 +116,7 @@ func RefreshToken(userID uuid.UUID, providedRefreshToken string) (string, error)
 	}
 
 	// Generate new access token WITH email
-	newAccessToken, err := utils.GenerateAccessToken(userID, user.Email)
+	newAccessToken, err := utils.GenerateAccessToken(userID, user.Email, user.Role)
 	if err != nil {
 		return "", errors.New("failed to generate new access token")
 	}

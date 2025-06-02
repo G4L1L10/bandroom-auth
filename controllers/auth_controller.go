@@ -14,6 +14,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// Helper to detect local dev
+func isLocalhostRequest(c *gin.Context) bool {
+	host := c.Request.Host
+	return strings.Contains(host, "localhost") || strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "10.0.2.2")
+}
+
 // AuthValidate verifies the JWT token
 func AuthValidate(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
@@ -23,7 +29,6 @@ func AuthValidate(c *gin.Context) {
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-
 	claims, err := utils.ValidateToken(token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
@@ -52,14 +57,12 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// ✅ Hash Password
 	hashedPassword, err := utils.HashPassword(input.Password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 		return
 	}
 
-	// ✅ Create User Model
 	user := &models.User{
 		ID:                 uuid.New(),
 		Email:              input.Email,
@@ -71,7 +74,6 @@ func Register(c *gin.Context) {
 		LastPasswordChange: time.Now(),
 	}
 
-	// ✅ Insert User into DB
 	if err := repository.CreateUser(user); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "User already exists or database error"})
 		return
@@ -80,7 +82,7 @@ func Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully", "user_id": user.ID})
 }
 
-// Login authenticates a user and issues an access + refresh token
+// Login authenticates a user and issues access + refresh tokens
 func Login(c *gin.Context) {
 	var input struct {
 		Email    string `json:"email" binding:"required,email"`
@@ -95,7 +97,6 @@ func Login(c *gin.Context) {
 	input.Email = strings.ToLower(input.Email)
 	ip := c.ClientIP()
 
-	// ✅ Verify credentials and retrieve user
 	user, err := repository.VerifyCredentials(input.Email, input.Password)
 	if err != nil {
 		middlewares.TrackFailedLogin(ip)
@@ -103,8 +104,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// ✅ Generate access and refresh tokens
-	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email)
+	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate access token"})
 		return
@@ -116,17 +116,21 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	middlewares.ResetFailedLogin(ip)
-
-	// ✅ Store Refresh Token in DB
 	err = repository.UpdateRefreshToken(user.ID, refreshToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store refresh token"})
 		return
 	}
 
-	// ✅ Set Refresh Token in HttpOnly cookie for Android Emulator (10.0.2.2)
-	c.SetCookie("refresh_token", refreshToken, 7*24*60*60, "/", "10.0.2.2", false, true)
+	middlewares.ResetFailedLogin(ip)
+
+	// ✅ Set refresh_token cookie
+	domain := "localhost"
+	if isLocalhostRequest(c) {
+		domain = "localhost"
+	}
+
+	c.SetCookie("refresh_token", refreshToken, 7*24*60*60, "/", domain, false, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Login successful",
@@ -134,7 +138,7 @@ func Login(c *gin.Context) {
 	})
 }
 
-// RefreshToken generates a new access token using the refresh token
+// RefreshToken issues a new access token using the refresh token cookie
 func RefreshToken(c *gin.Context) {
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
@@ -154,7 +158,6 @@ func RefreshToken(c *gin.Context) {
 		return
 	}
 
-	// ✅ Check if refresh token in DB matches
 	if user.RefreshToken == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No refresh token stored"})
 		return
@@ -166,7 +169,7 @@ func RefreshToken(c *gin.Context) {
 		return
 	}
 
-	newAccessToken, err := utils.GenerateAccessToken(user.ID, user.Email)
+	newAccessToken, err := utils.GenerateAccessToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate access token"})
 		return
@@ -175,7 +178,7 @@ func RefreshToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"access_token": newAccessToken})
 }
 
-// Logout invalidates the refresh token properly
+// Logout clears refresh token from DB and cookie
 func Logout(c *gin.Context) {
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
@@ -189,39 +192,35 @@ func Logout(c *gin.Context) {
 		return
 	}
 
-	// ✅ Get stored refresh token from database
 	storedToken, err := repository.GetRefreshToken(claims.UserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch refresh token"})
 		return
 	}
 
-	// ✅ If there's no stored token, user is already logged out
-	if storedToken == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User already logged out"})
+	if storedToken == "" || storedToken != refreshToken {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session"})
 		return
 	}
 
-	// ✅ If stored token doesn't match the one in the cookie, reject logout
-	if storedToken != refreshToken {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token does not match"})
-		return
-	}
-
-	// ✅ Explicitly clear refresh token from DB
 	err = repository.UpdateRefreshToken(claims.UserID, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout"})
 		return
 	}
 
-	// ✅ Remove cookie for Android Emulator
-	c.SetCookie("refresh_token", "", -1, "/", "10.0.2.2", false, true)
+	// ✅ Clear cookie
+	domain := "localhost"
+	if isLocalhostRequest(c) {
+		domain = "localhost"
+	}
+
+	c.SetCookie("refresh_token", "", -1, "/", domain, false, true)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
 }
 
-// GetUser retrieves the authenticated user's profile
+// GetUser returns current authenticated user
 func GetUser(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
@@ -243,3 +242,4 @@ func GetUser(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"id": user.ID, "email": user.Email})
 }
+

@@ -13,17 +13,19 @@ import (
 type Claims struct {
 	UserID uuid.UUID `json:"user_id"`
 	Email  string    `json:"email"`
+	Role   string    `json:"role"` // ✅ Add this line
 	jwt.RegisteredClaims
 }
 
 // GenerateAccessToken creates a short-lived JWT access token (15 min)
-func GenerateAccessToken(userID uuid.UUID, email string) (string, error) {
+func GenerateAccessToken(userID uuid.UUID, email, role string) (string, error) {
 	secretKey := []byte(os.Getenv("JWT_SECRET"))
 
 	expirationTime := time.Now().Add(15 * time.Minute)
 	claims := &Claims{
 		UserID: userID,
 		Email:  email,
+		Role:   role, // ✅ Include role here
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
