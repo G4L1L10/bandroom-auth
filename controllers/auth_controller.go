@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,10 +16,10 @@ import (
 )
 
 // Helper to detect local dev
-func isLocalhostRequest(c *gin.Context) bool {
+/*func isLocalhostRequest(c *gin.Context) bool {
 	host := c.Request.Host
 	return strings.Contains(host, "localhost") || strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "10.0.2.2")
-}
+}*/
 
 // AuthValidate verifies the JWT token
 func AuthValidate(c *gin.Context) {
@@ -124,13 +125,16 @@ func Login(c *gin.Context) {
 
 	middlewares.ResetFailedLogin(ip)
 
-	// ✅ Set refresh_token cookie
-	domain := "localhost"
-	if isLocalhostRequest(c) {
-		domain = "localhost"
-	}
-
-	c.SetCookie("refresh_token", refreshToken, 7*24*60*60, "/", domain, false, true)
+	// ✅ Set refresh_token as HttpOnly cookie
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   false,            // Set true in production with HTTPS
+		MaxAge:   60 * 60 * 24 * 7, // 7 days
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Login successful",
@@ -182,7 +186,15 @@ func RefreshToken(c *gin.Context) {
 func Logout(c *gin.Context) {
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token missing or invalid"})
+		// 🔍 DEBUG: dump all received cookies
+		allCookies := []string{}
+		for _, cookie := range c.Request.Cookies() {
+			allCookies = append(allCookies, fmt.Sprintf("%s=%s", cookie.Name, cookie.Value))
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":            "Refresh token missing",
+			"availableCookies": allCookies,
+		})
 		return
 	}
 
@@ -209,13 +221,16 @@ func Logout(c *gin.Context) {
 		return
 	}
 
-	// ✅ Clear cookie
-	domain := "localhost"
-	if isLocalhostRequest(c) {
-		domain = "localhost"
-	}
-
-	c.SetCookie("refresh_token", "", -1, "/", domain, false, true)
+	// ✅ Clear refresh_token cookie
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   false,
+		MaxAge:   -1, // Expire immediately
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
 }
