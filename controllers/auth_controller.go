@@ -15,12 +15,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Helper to detect local dev
-/*func isLocalhostRequest(c *gin.Context) bool {
-	host := c.Request.Host
-	return strings.Contains(host, "localhost") || strings.HasPrefix(host, "127.") || strings.HasPrefix(host, "10.0.2.2")
-}*/
-
 // AuthValidate verifies the JWT token
 func AuthValidate(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
@@ -80,7 +74,42 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "User registered successfully", "user_id": user.ID})
+	// ✅ Generate access token
+	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate access token"})
+		return
+	}
+
+	// ✅ Generate refresh token
+	refreshToken, err := utils.GenerateRefreshToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate refresh token"})
+		return
+	}
+
+	err = repository.UpdateRefreshToken(user.ID, refreshToken)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store refresh token"})
+		return
+	}
+
+	// ✅ Set refresh_token cookie
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   false,            // set true in prod
+		MaxAge:   60 * 60 * 24 * 7, // 7 days
+	})
+
+	// ✅ Return access token like in Login
+	c.JSON(http.StatusCreated, gin.H{
+		"message":      "User registered successfully",
+		"access_token": accessToken,
+	})
 }
 
 // Login authenticates a user and issues access + refresh tokens
@@ -257,4 +286,3 @@ func GetUser(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"id": user.ID, "email": user.Email})
 }
-
